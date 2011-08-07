@@ -143,7 +143,7 @@ static MKStoreManager* _sharedStoreManager;
 		
         if (_sharedStoreManager == nil) {
             
-#if TARGET_IPHONE_SIMULATOR
+#if TARGET_IPHONE_SIMULATOR && !defined (__IPHONE_5_0)
 			NSLog(@"You are running in Simulator MKStoreKit runs only on devices");
 #else
             _sharedStoreManager = [[self alloc] init];					
