@@ -147,9 +147,9 @@ static MKStoreManager* _sharedStoreManager;
 			NSLog(@"You are running in Simulator MKStoreKit runs only on devices");
 #else
             _sharedStoreManager = [[self alloc] init];					
-			_sharedStoreManager.purchasableObjects = [[NSMutableArray alloc] init];
+			_sharedStoreManager.purchasableObjects = [NSMutableArray array];
 			[_sharedStoreManager requestProductData];						
-			_sharedStoreManager.storeObserver = [[MKStoreObserver alloc] init];
+			_sharedStoreManager.storeObserver = [[[MKStoreObserver alloc] init] autorelease];
 			[[SKPaymentQueue defaultQueue] addTransactionObserver:_sharedStoreManager.storeObserver];            
             [_sharedStoreManager startVerifyingSubscriptionReceipts];
 #endif
@@ -260,7 +260,7 @@ static MKStoreManager* _sharedStoreManager;
     [productsArray addObjectsFromArray:subscriptions];
     
     int itemCount = productsArray.count;
-    NSError *error;
+    NSError *error = nil;
     
     //loop through all the saved keychain data and remove it    
     for (int i = 0; i < itemCount; i++ ) {

@@ -170,9 +170,6 @@ didReceiveResponse:(NSURLResponse *)response
             self.onReceiptVerificationFailed = nil;
         }
     }
-	
-	[responseString release];
-    
 }
 
 
@@ -225,9 +222,6 @@ didReceiveResponse:(NSURLResponse *)response
         
         [onReviewRequestVerificationFailed release], onReviewRequestVerificationFailed = nil;
     }
-	
-	[responseString release];
-    
 }
 
 + (void)connection:(NSURLConnection *)connection
