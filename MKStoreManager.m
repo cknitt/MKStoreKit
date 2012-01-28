@@ -3,7 +3,7 @@
 //  MKStoreKit (Version 4.0)
 //
 //  Created by Mugunth Kumar on 17-Nov-2010.
-//  Version 4.0
+//  Version 4.1
 //  Copyright 2010 Steinlogic. All rights reserved.
 //	File created using Singleton XCode Template by Mugunth Kumar (http://mugunthkumar.com
 //  Permission granted to do anything, commercial/non-commercial with this file apart from removing the line/URL above
@@ -46,10 +46,10 @@
 @property (nonatomic, copy) void (^onRestoreFailed)(NSError* error);
 @property (nonatomic, copy) void (^onRestoreCompleted)();
 
-@property (nonatomic, retain) NSMutableArray *purchasableObjects;
-@property (nonatomic, retain) NSMutableDictionary *subscriptionProducts;
+@property (nonatomic, strong) NSMutableArray *purchasableObjects;
+@property (nonatomic, strong) NSMutableDictionary *subscriptionProducts;
 
-@property (nonatomic, retain) MKStoreObserver *storeObserver;
+@property (nonatomic, strong) MKStoreObserver *storeObserver;
 @property (nonatomic, assign, getter=isProductsAvailable) BOOL isProductsAvailable;
 
 - (void) requestProductData;
@@ -73,20 +73,53 @@
 
 static MKStoreManager* _sharedStoreManager;
 
++(void) updateFromiCloud:(NSNotification*) notificationObject {
+    
+    NSLog(@"Updating from iCloud");
+        
+    NSUbiquitousKeyValueStore *iCloudStore = [NSUbiquitousKeyValueStore defaultStore];
+    NSDictionary *dict = [iCloudStore dictionaryRepresentation];
+    
+    [dict enumerateKeysAndObjectsUsingBlock:^(id key, id obj, BOOL *stop) {
+        
+        NSError *error = nil;
+        [SFHFKeychainUtils storeUsername:key 
+                             andPassword:obj
+                          forServiceName:@"MKStoreKit"
+                          updateExisting:YES 
+                                   error:&error];
+        
+        if(error)
+            NSLog(@"%@", [error localizedDescription]);
+    }];    
+}
+
++(BOOL) iCloudAvailable {
+    
+    if(NSClassFromString(@"NSUbiquitousKeyValueStore")) { // is iOS 5?
+        
+        if([NSUbiquitousKeyValueStore defaultStore]) {  // is iCloud enabled
+     
+            return YES;
+        }
+    }
+    
+    return NO;
+}
+
 - (void)dealloc {
     
-    [_purchasableObjects release], _purchasableObjects = nil;
-    [_storeObserver release], _storeObserver = nil;
-    [onTransactionCancelled release], onTransactionCancelled = nil;
-    [onTransactionCompleted release], onTransactionCompleted = nil;
-    [onRestoreFailed release], onRestoreFailed = nil;
-    [onRestoreCompleted release], onRestoreCompleted = nil;    
-    [super dealloc];
+    _purchasableObjects = nil;
+    _storeObserver = nil;
+    onTransactionCancelled = nil;
+    onTransactionCompleted = nil;
+    onRestoreFailed = nil;
+    onRestoreCompleted = nil;    
 }
 
 + (void) dealloc
 {
-	[_sharedStoreManager release], _sharedStoreManager = nil;
+	_sharedStoreManager = nil;
 	[super dealloc];
 }
 
@@ -95,7 +128,7 @@ static MKStoreManager* _sharedStoreManager;
     NSString *objectString = nil;
     if([object isKindOfClass:[NSData class]])
     {
-        objectString = [[[NSString alloc] initWithData:object encoding:NSUTF8StringEncoding] autorelease];
+        objectString = [[NSString alloc] initWithData:object encoding:NSUTF8StringEncoding];
     }
     if([object isKindOfClass:[NSNumber class]])
     {       
@@ -110,6 +143,11 @@ static MKStoreManager* _sharedStoreManager;
     
     if(error)
         NSLog(@"%@", [error localizedDescription]);
+    
+    if([self iCloudAvailable]) {
+        [[NSUbiquitousKeyValueStore defaultStore] setObject:objectString forKey:key];
+        [[NSUbiquitousKeyValueStore defaultStore] synchronize];
+    }
 }
 
 +(id) objectForKey:(NSString*) key
@@ -139,38 +177,36 @@ static MKStoreManager* _sharedStoreManager;
 
 + (MKStoreManager*)sharedManager
 {
-	@synchronized(self) {
-		
-        if (_sharedStoreManager == nil) {
+	if(!_sharedStoreManager) {
+		static dispatch_once_t oncePredicate;
+		dispatch_once(&oncePredicate, ^{
+			_sharedStoreManager = [[super allocWithZone:nil] init];            
+        });
             
 #if TARGET_IPHONE_SIMULATOR && !defined (__IPHONE_5_0)
-			NSLog(@"You are running in Simulator MKStoreKit runs only on devices");
+        NSLog(@"You are running in Simulator MKStoreKit runs only on devices");
 #else
-            _sharedStoreManager = [[self alloc] init];					
-			_sharedStoreManager.purchasableObjects = [NSMutableArray array];
-			[_sharedStoreManager requestProductData];						
-			_sharedStoreManager.storeObserver = [[[MKStoreObserver alloc] init] autorelease];
-			[[SKPaymentQueue defaultQueue] addTransactionObserver:_sharedStoreManager.storeObserver];            
-            [_sharedStoreManager startVerifyingSubscriptionReceipts];
+        _sharedStoreManager = [[self alloc] init];					
+        _sharedStoreManager.purchasableObjects = [[NSMutableArray alloc] init];
+        [_sharedStoreManager requestProductData];						
+        _sharedStoreManager.storeObserver = [[MKStoreObserver alloc] init];
+        [[SKPaymentQueue defaultQueue] addTransactionObserver:_sharedStoreManager.storeObserver];            
+        [_sharedStoreManager startVerifyingSubscriptionReceipts];
+        
+        if([self iCloudAvailable])
+            [[NSNotificationCenter defaultCenter] addObserver:self 
+                                                 selector:@selector(updateFromiCloud:) 
+                                                     name:NSUbiquitousKeyValueStoreDidChangeExternallyNotification 
+                                                   object:nil];
+
 #endif
-        }
     }
     return _sharedStoreManager;
 }
 
 + (id)allocWithZone:(NSZone *)zone
-
 {	
-    @synchronized(self) {
-		
-        if (_sharedStoreManager == nil) {
-			
-            _sharedStoreManager = [super allocWithZone:zone];			
-            return _sharedStoreManager;  // assignment and return on first allocation
-        }
-    }
-	
-    return nil; //on subsequent allocation attempts return nil	
+    return [self sharedManager];
 }
 
 
@@ -178,29 +214,6 @@ static MKStoreManager* _sharedStoreManager;
 {
     return self;	
 }
-
-#if __has_feature (objc_arc)
-
-- (id)retain
-{	
-    return self;	
-}
-
-- (unsigned)retainCount
-{
-    return UINT_MAX;  //denotes an object that cannot be released
-}
-
-- (void)release
-{
-    //do nothing
-}
-
-- (id)autorelease
-{
-    return self;	
-}
-#endif
 
 #pragma mark Internal MKStoreKit functions
 
@@ -289,9 +302,7 @@ static MKStoreManager* _sharedStoreManager;
 	for(NSString *invalidProduct in response.invalidProductIdentifiers)
 		NSLog(@"Problem in iTunes connect configuration for product: %@", invalidProduct);
 #endif
-	
-	[request autorelease];
-	
+		
 	isProductsAvailable = YES;    
     [[NSNotificationCenter defaultCenter] postNotificationName:kProductFetchedNotification 
                                                         object:[NSNumber numberWithBool:isProductsAvailable]];
@@ -299,8 +310,6 @@ static MKStoreManager* _sharedStoreManager;
 
 - (void)request:(SKRequest *)request didFailWithError:(NSError *)error
 {
-	[request autorelease];
-	
 	isProductsAvailable = NO;	
     [[NSNotificationCenter defaultCenter] postNotificationName:kProductFetchedNotification 
                                                         object:[NSNumber numberWithBool:isProductsAvailable]];
@@ -333,7 +342,6 @@ static MKStoreManager* _sharedStoreManager;
 		[numberFormatter setNumberStyle:NSNumberFormatterCurrencyStyle];
 		[numberFormatter setLocale:product.priceLocale];
 		NSString *formattedString = [numberFormatter stringFromNumber:product.price];
-		[numberFormatter release];
 		
 		// you might probably need to change this line to suit your UI needs
 		NSString *description = [NSString stringWithFormat:@"%@ (%@)",[product localizedTitle], formattedString];
@@ -344,7 +352,6 @@ static MKStoreManager* _sharedStoreManager;
 		[productDescriptions addObject: description];
 	}
 	
-	[productDescriptions autorelease];
 	return productDescriptions;
 }
 
@@ -368,13 +375,34 @@ NSString *upgradePrice = [prices objectForKey:@"com.mycompany.upgrade"]
 		[numberFormatter setNumberStyle:NSNumberFormatterCurrencyStyle];
 		[numberFormatter setLocale:product.priceLocale];
 		NSString *formattedString = [numberFormatter stringFromNumber:product.price];
-		[numberFormatter release];
         
         NSString *priceString = [NSString stringWithFormat:@"%@", formattedString];
         [priceDict setObject:priceString forKey:product.productIdentifier]; 
         
     }
     return priceDict;
+}
+
+-(void) showAlertWithTitle:(NSString*) title message:(NSString*) message {
+    
+#if TARGET_OS_IPHONE
+    UIAlertView *alert = [[UIAlertView alloc] initWithTitle:title
+                                                    message:message
+                                                   delegate:nil 
+                                          cancelButtonTitle:NSLocalizedString(@"Dismiss", @"")
+                                          otherButtonTitles:nil];
+    [alert show];             
+#elif TARGET_OS_MAC
+    NSAlert *alert = [[NSAlert alloc] init];
+    [alert addButtonWithTitle:NSLocalizedString(@"Dismiss", @"")];
+    
+    [alert setMessageText:title];
+    [alert setInformativeText:message];             
+    [alert setAlertStyle:NSInformationalAlertStyle];
+    
+    [alert runModal];
+    
+#endif
 }
 
 - (void) buyFeature:(NSString*) featureId
@@ -389,13 +417,8 @@ NSString *upgradePrice = [prices objectForKey:@"com.mycompany.upgrade"]
      {
          if([isAllowed boolValue])
          {
-             UIAlertView *alert = [[UIAlertView alloc] initWithTitle:NSLocalizedString(@"Review request approved", @"")
-                                                             message:NSLocalizedString(@"You can use this feature for reviewing the app.", @"")
-                                                            delegate:self 
-                                                   cancelButtonTitle:NSLocalizedString(@"Dismiss", @"")
-                                                   otherButtonTitles:nil];
-             [alert show];
-             [alert release];
+             [self showAlertWithTitle:NSLocalizedString(@"Review request approved", @"")
+                              message:NSLocalizedString(@"You can use this feature for reviewing the app.", @"")];
              
              if(self.onTransactionCompleted)
                  self.onTransactionCompleted(featureId);                                         
@@ -417,18 +440,19 @@ NSString *upgradePrice = [prices objectForKey:@"com.mycompany.upgrade"]
 {
     if ([SKPaymentQueue canMakePayments])
 	{
-		SKPayment *payment = [SKPayment paymentWithProductIdentifier:productId];
+        NSArray *allIds = [self.purchasableObjects valueForKey:@"productIdentifier"];
+        int index = [allIds indexOfObject:productId];
+        
+        if(index == NSNotFound) return;
+        
+        SKProduct *thisProduct = [self.purchasableObjects objectAtIndex:index];
+		SKPayment *payment = [SKPayment paymentWithProduct:thisProduct];
 		[[SKPaymentQueue defaultQueue] addPayment:payment];
 	}
 	else
 	{
-		UIAlertView *alert = [[UIAlertView alloc] initWithTitle:NSLocalizedString(@"In-App Purchasing disabled", @"")
-														message:NSLocalizedString(@"Check your parental control settings and try again later", @"")
-													   delegate:self 
-											  cancelButtonTitle:NSLocalizedString(@"Dismiss", @"")
-											  otherButtonTitles: nil];
-		[alert show];
-		[alert release];
+        [self showAlertWithTitle:NSLocalizedString(@"In-App Purchasing disabled", @"")
+                         message:NSLocalizedString(@"Check your parental control settings and try again later", @"")];
 	}
 }
 
@@ -468,7 +492,7 @@ NSString *upgradePrice = [prices objectForKey:@"com.mycompany.upgrade"]
     self.subscriptionProducts = [NSMutableDictionary dictionary];
     for(NSString *productId in [subscriptions allKeys])
     {
-        MKSKSubscriptionProduct *product = [[[MKSKSubscriptionProduct alloc] initWithProductId:productId subscriptionDays:[[subscriptions objectForKey:productId] intValue]] autorelease];        
+        MKSKSubscriptionProduct *product = [[MKSKSubscriptionProduct alloc] initWithProductId:productId subscriptionDays:[[subscriptions objectForKey:productId] intValue]];        
         product.receipt = [MKStoreManager dataForKey:productId]; // cached receipt
         
         if(product.receipt)
@@ -497,6 +521,11 @@ NSString *upgradePrice = [prices objectForKey:@"com.mycompany.upgrade"]
     }
 }
 
+-(NSData*) receiptFromBundle {
+    
+    return nil;
+}
+
 #pragma mark In-App purchases callbacks
 // In most cases you don't have to touch these methods
 -(void) provideContent: (NSString*) productIdentifier 
@@ -505,6 +534,9 @@ NSString *upgradePrice = [prices objectForKey:@"com.mycompany.upgrade"]
     MKSKSubscriptionProduct *subscriptionProduct = [self.subscriptionProducts objectForKey:productIdentifier];
     if(subscriptionProduct)
     {                
+        // MAC In App Purchases can never be a subscription product (at least as on Dec 2011)
+        // so this can be safely ignored.
+        
         subscriptionProduct.receipt = receiptData;
         [subscriptionProduct verifyReceiptOnComplete:^(NSNumber* isActive)
          {
@@ -520,12 +552,29 @@ NSString *upgradePrice = [prices objectForKey:@"com.mycompany.upgrade"]
     }        
     else
     {
+        if(!receiptData) {
+        
+            // could be a mac in app receipt.
+            // read from receipts and verify here
+            receiptData = [self receiptFromBundle];
+            if(!receiptData) {
+                if(self.onTransactionCancelled)
+                {
+                    self.onTransactionCancelled(productIdentifier);
+                }
+                else
+                {
+                    NSLog(@"Receipt invalid");
+                }
+            }
+        }
+        
         if(OWN_SERVER && SERVER_PRODUCT_MODEL)
         {
             // ping server and get response before serializing the product
             // this is a blocking call to post receipt data to your server
             // it should normally take a couple of seconds on a good 3G connection
-            MKSKProduct *thisProduct = [[[MKSKProduct alloc] initWithProductId:productIdentifier receiptData:receiptData] autorelease];
+            MKSKProduct *thisProduct = [[MKSKProduct alloc] initWithProductId:productIdentifier receiptData:receiptData];
             
             [thisProduct verifyReceiptOnComplete:^
              {
@@ -565,7 +614,7 @@ NSString *upgradePrice = [prices objectForKey:@"com.mycompany.upgrade"]
         int oldCount = [[MKStoreManager numberForKey:productPurchased] intValue];
         int newCount = oldCount + quantityPurchased;	
         
-        [MKStoreManager setObject:[NSNumber numberWithInt:newCount] forKey:productIdentifier];        
+        [MKStoreManager setObject:[NSNumber numberWithInt:newCount] forKey:productPurchased];        
     }
     else
     {
@@ -593,14 +642,8 @@ NSString *upgradePrice = [prices objectForKey:@"com.mycompany.upgrade"]
     NSLog(@"error: %@", transaction.error);    
 #endif
 	
-    UIAlertView *alert = [[UIAlertView alloc] initWithTitle:[transaction.error localizedFailureReason] 
-													message:[transaction.error localizedRecoverySuggestion]
-												   delegate:self 
-										  cancelButtonTitle:NSLocalizedString(@"Dismiss", @"")
-										  otherButtonTitles: nil];
-	[alert show];
-	[alert release];
-    
+    [self showAlertWithTitle:[transaction.error localizedFailureReason]  message:[transaction.error localizedRecoverySuggestion]];
+
     if(self.onTransactionCancelled)
         self.onTransactionCancelled();
 }
