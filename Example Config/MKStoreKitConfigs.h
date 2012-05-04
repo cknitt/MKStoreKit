@@ -1,9 +1,8 @@
 //
 //  MKStoreKitConfigs.h
-//  MKStoreKit (Version 4.0)
+//  MKStoreKit (Version 4.2)
 //
 //  Created by Mugunth Kumar on 17-Nov-2010.
-//  Version 4.1
 //  Copyright 2010 Steinlogic. All rights reserved.
 //	File created using Singleton XCode Template by Mugunth Kumar (http://mugunthkumar.com
 //  Permission granted to do anything, commercial/non-commercial with this file apart from removing the line/URL above
@@ -37,13 +36,13 @@
 // when you include MKStoreManager in your clss, these macros get defined there
 
 #define kConsumableBaseFeatureId @"com.mycompany.myapp."
-#define kFeatureAId @"com.mugunthkumar.subinapptest.wk1"
+#define kFeatureAId @"com.mugunthkumar.caltasks.propack"
 #define kConsumableFeatureBId @"com.mycompany.myapp.005"
 #define FishBasket @"FishBasket"
 
 #define SERVER_PRODUCT_MODEL 0
 #define OWN_SERVER nil
-#define REVIEW_ALLOWED 1
+#define REVIEW_ALLOWED 0
 
 #warning Shared Secret Missing Ignore this warning if you don't use auto-renewable subscriptions
 #define kSharedSecret @"<FILL IN YOUR SHARED SECRET HERE>"

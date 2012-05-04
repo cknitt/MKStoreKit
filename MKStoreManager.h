@@ -1,9 +1,8 @@
 //
-//  StoreManager.h
-//  MKStoreKit (Version 4.0)
+//  MKStoreManager.h
+//  MKStoreKit (Version 4.2)
 //
 //  Created by Mugunth Kumar on 17-Nov-2010.
-//  Version 4.1
 //  Copyright 2010 Steinlogic. All rights reserved.
 //	File created using Singleton XCode Template by Mugunth Kumar (http://mugunthkumar.com
 //  Permission granted to do anything, commercial/non-commercial with this file apart from removing the line/URL above
@@ -64,7 +63,7 @@
 
 // use this method to invoke a purchase
 - (void) buyFeature:(NSString*) featureId
-         onComplete:(void (^)(NSString*)) completionBlock         
+         onComplete:(void (^)(NSString*, NSData*)) completionBlock         
         onCancelled:(void (^)(void)) cancelBlock;
 
 // use this method to restore a purchase
